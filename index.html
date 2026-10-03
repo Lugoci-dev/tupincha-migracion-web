@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>TuPincha · Acceso de proveedores</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="description" content="Sitio temporal de acceso para proveedores de TuPincha." />
+  <link rel="icon" href="assets/favicon.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ---------------------------------------------------------------- login -->
+  <section class="login-screen" id="loginScreen" hidden>
+    <div class="login-card">
+      <img src="assets/icon.png" alt="TuPincha" />
+      <h1>Acceso de proveedores</h1>
+      <p>Introduce el código de campaña para ver los contactos.</p>
+      <form id="loginForm" autocomplete="off">
+        <input
+          class="field"
+          id="passcodeInput"
+          type="password"
+          placeholder="Código de campaña"
+          autocomplete="current-password"
+          required
+        />
+        <button class="btn btn-primary btn-block" type="submit" id="loginBtn">Entrar</button>
+      </form>
+      <div class="alert" id="loginError" hidden></div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ app -->
+  <div id="app" hidden>
+    <header class="topbar">
+      <img src="assets/icon.png" alt="" />
+      <div>
+        <div class="title">TuPincha</div>
+        <div class="subtitle">Campaña de acceso para proveedores</div>
+      </div>
+      <div class="spacer"></div>
+      <span class="badge" id="counterBadge">0 / 0</span>
+      <button class="btn btn-ghost" id="logoutBtn" style="color:#fff;border-color:rgba(255,255,255,.35)">
+        Salir
+      </button>
+    </header>
+
+    <main class="wrap">
+      <section class="toolbar">
+        <input
+          class="field search"
+          id="searchInput"
+          type="search"
+          placeholder="Buscar por nombre, correo, teléfono, categoría…"
+        />
+        <div class="chips" id="chips">
+          <button class="chip active" data-filtro="pendientes">Pendientes</button>
+          <button class="chip" data-filtro="todos">Todos</button>
+          <button class="chip" data-filtro="whatsapp">WhatsApp</button>
+          <button class="chip" data-filtro="correo">Correo</button>
+          <button class="chip" data-filtro="sin-categoria">Sin categoría</button>
+        </div>
+        <div style="flex-basis:100%">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+            <span class="progress-text" id="progressText">—</span>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-ghost" id="csvBtn">Descargar progreso</button>
+              <button class="btn btn-gold" id="nextBtn">Siguiente pendiente →</button>
+            </div>
+          </div>
+          <div class="bar"><i id="progressBar" style="width:0%"></i></div>
+        </div>
+      </section>
+
+      <div class="grid" id="grid"></div>
+      <p class="empty" id="emptyMsg" hidden>No hay contactos que coincidan con el filtro.</p>
+    </main>
+  </div>
+
+  <!-- ---------------------------------------------------------------- modal -->
+  <div class="modal-bg" id="modalBg" hidden>
+    <div class="modal">
+      <header>
+        <h3 id="modalTitle">Mensaje</h3>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn btn-ghost" id="modalClose">Cerrar</button>
+      </header>
+      <div class="body" id="modalBody"></div>
+      <footer id="modalFooter"></footer>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
