@@ -215,9 +215,9 @@
     var detalles = [];
     if (cont.specialty) detalles.push("<b>Oficio:</b> " + esc(cont.specialty));
     if (cont.region_text || cont.address_text) {
-      detalles.push("<b>Zona:</b> " + esc(cont.region_text || "") +
-        (cont.region_text && cont.address_text ? " · " : "") +
-        esc(cont.address_text || ""));
+      // municipality primero, provincia después (region_text = estado)
+      var zona = [cont.address_text, cont.region_text].filter(Boolean).join(", ");
+      detalles.push("<b>Zona:</b> " + esc(zona));
     }
     detalles.push("<b>Servicios:</b> " + (c.services_count || 0));
 
@@ -231,6 +231,11 @@
         "<h3>" + esc(c.brand) + "</h3>" +
         '<div class="meta">' + detalles.join(" · ") + "</div>" +
         '<div class="tags">' + tagsDe(c) + "</div>" +
+        '<div class="meta plan">' +
+          ((c.category_slugs || []).length
+            ? "Se crean al confirmar su correo"
+            : "Sin servicios en el legacy") +
+        "</div>" +
         (cont.bio ? '<p class="bio">' + esc(cont.bio) + "</p>" : "") +
         '<div class="contact">' +
           (c.phone ? "<span>📱 " + esc(c.phone) + "</span>" : "") +
