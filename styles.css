@@ -142,6 +142,11 @@ html, body {
 .btn-wa { background: var(--green); color: #fff; }
 .btn-mail { background: var(--tint); color: #fff; }
 .btn-gold { background: var(--gold); color: var(--primary); }
+.btn-outline {
+  background: transparent;
+  color: var(--g-600);
+  border: 1px solid var(--g-300);
+}
 .btn-ghost {
   background: transparent;
   color: var(--g-600);

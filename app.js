@@ -225,6 +225,7 @@
       ? '<button class="btn btn-wa" data-accion="whatsapp" data-id="' + c.legacy_id + '">WhatsApp</button>'
       : "";
     acciones += '<button class="btn btn-mail" data-accion="correo" data-id="' + c.legacy_id + '">Correo</button>';
+    acciones += '<button class="btn btn-outline" data-accion="enviar" data-id="' + c.legacy_id + '">Enviar</button>';
 
     return (
       '<article class="card' + (est ? " enviado" : "") + '">' +
@@ -314,6 +315,8 @@
         }
         pie += '<button class="btn btn-mail" data-accion="abrir-mail" data-id="' + legacyId + '">' +
           "Abrir correo</button>";
+        pie += '<button class="btn btn-primary" data-accion="enviar" data-id="' + legacyId + '">' +
+          "Enviar por Resend</button>";
         pie += '<button class="btn btn-ghost" data-accion="copiar" data-id="' + legacyId + '">' +
           "Copiar texto</button>";
 
@@ -345,6 +348,33 @@
       window.location.href = url;
       marcar(legacyId, "correo");
     }).catch(function (err) { alert("No se pudo abrir el correo: " + err.message); });
+  }
+
+  /**
+   * Envío real por correo: la RPC encola la llamada a la Edge Function, que
+   * la manda por Resend. Devuelve "queued" (es asíncrono), así que el estado
+   * real se consulta luego con web_migration_email_log.
+   */
+  function enviarCorreo(legacyIds) {
+    if (!state.token) { alert("La sesión caducó. Vuelve a entrar."); return; }
+
+    var boton = document.querySelector('[data-accion="enviar-visibles"]');
+    if (boton) { boton.disabled = true; boton.textContent = "Enviando…"; }
+
+    return rpc(CFG.rpc.sendEmail, {
+      p_params: { p_token: state.token, p_legacy_ids: legacyIds, p_dry_run: false },
+    })
+      .then(function (res) {
+        (legacyIds || []).forEach(function (id) { marcar(id, "correo-enviado"); });
+        alert("Encolados: " + res.queued + " correo(s). El envío lo hace Resend en segundo plano.");
+        if (modalActual && legacyIds.indexOf(modalActual.legacy_id) !== -1) cerrarModal();
+      })
+      .catch(function (err) {
+        alert("No se pudo encolar el envío: " + err.message);
+      })
+      .finally(function () {
+        if (boton) { boton.disabled = false; boton.textContent = "Enviar los visibles"; }
+      });
   }
 
   function copiarTexto(legacyId) {
@@ -399,6 +429,16 @@
 
     if (accion === "whatsapp") { abrirWa(id); return; }
     if (accion === "correo") { abrirMail(id); return; }
+    if (accion === "enviar") { enviarCorreo([id]); return; }
+    if (accion === "enviar-visibles") {
+      var ids = state.contactos
+        .filter(function (c) { return pasaFiltro(c) && coincideBusqueda(c); })
+        .map(function (c) { return c.legacy_id; });
+      if (!ids.length) { alert("No hay contactos visibles con el filtro actual."); return; }
+      if (!confirm("Se enviarán " + ids.length + " correos ahora mismo. ¿Continuar?")) return;
+      enviarCorreo(ids);
+      return;
+    }
     if (accion === "desmarcar") { desmarcar(id); return; }
     if (accion === "abrir-wa") { abrirWa(id); cerrarModal(); return; }
     if (accion === "abrir-mail") { abrirMail(id); cerrarModal(); return; }

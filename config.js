@@ -15,6 +15,8 @@ window.TUPINCHA_WEB = {
     ping: "web_migration_ping",
     list: "web_migration_list",
     message: "web_migration_message",
+    sendEmail: "web_migration_send_email",
+    emailLog: "web_migration_email_log",
     logout: "web_migration_logout",
   },
 
