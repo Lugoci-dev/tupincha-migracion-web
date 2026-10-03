@@ -354,9 +354,19 @@
    * Envío real por correo: la RPC encola la llamada a la Edge Function, que
    * la manda por Resend. Devuelve "queued" (es asíncrono), así que el estado
    * real se consulta luego con web_migration_email_log.
+   *
+   * `legacyIds` con más de un contacto pasa SIEMPRE por la prueba previa:
+   * validación en Supabase + muestra del correo + escribir el número a mano.
    */
-  function enviarCorreo(legacyIds) {
+  function enviarCorreo(legacyIds, opciones) {
+    opciones = opciones || {};
     if (!state.token) { alert("La sesión caducó. Vuelve a entrar."); return; }
+
+    var varios = legacyIds && legacyIds.length > 1;
+    if (varios && !opciones.confirmado) {
+      abrirConfirmacion(legacyIds);
+      return;
+    }
 
     var boton = document.querySelector('[data-accion="enviar-visibles"]');
     if (boton) { boton.disabled = true; boton.textContent = "Enviando…"; }
@@ -366,8 +376,12 @@
     })
       .then(function (res) {
         (legacyIds || []).forEach(function (id) { marcar(id, "correo-enviado"); });
-        alert("Encolados: " + res.queued + " correo(s). El envío lo hace Resend en segundo plano.");
-        if (modalActual && legacyIds.indexOf(modalActual.legacy_id) !== -1) cerrarModal();
+        cerrarModal();
+        alert(
+          "Encolados: " + res.queued + " correo(s).\n\n" +
+          "Resend los manda en segundo plano. El estado real de cada uno está en\n" +
+          "web_migration_email_log."
+        );
       })
       .catch(function (err) {
         alert("No se pudo encolar el envío: " + err.message);
@@ -375,6 +389,112 @@
       .finally(function () {
         if (boton) { boton.disabled = false; boton.textContent = "Enviar los visibles"; }
       });
+  }
+
+  /* ------------------------------------------------- prueba previa / confirm */
+
+  var MOTIVOS = {
+    EMAIL_INVALIDO: "correo no válido",
+    SIN_ASUNTO: "sin asunto",
+    SIN_CUERPO: "sin cuerpo",
+    DESACTIVADO: "desactivado",
+  };
+
+  /**
+   * Antes de mandar a más de uno: valida en Supabase (que no llama a la Edge
+   * Function) y muestra el HTML real del primer contacto, Composite lo pide
+   * con p_dry_run. Nada sale hasta que escribas el número de destinatarios.
+   */
+  function abrirConfirmacion(legacyIds) {
+    modalActual = null;
+    $("modalTitle").textContent = "Enviar correos";
+    $("modalBody").innerHTML = '<p class="hint">Comprobando los ' + legacyIds.length + " contactos…</p>";
+    $("modalFooter").innerHTML = "";
+    $("modalBg").hidden = false;
+
+    rpc(CFG.rpc.preview, { p_params: { p_token: state.token, p_legacy_ids: legacyIds } })
+      .then(function (r) {
+        var faltan = r.faltan || [];
+        var muestra = r.muestra;
+
+        var html =
+          '<div class="check"><div class="check-ok"><b>' + r.listos + "</b> listos para enviar</div>" +
+          (faltan.length
+            ? '<div class="check-bad"><b>' + faltan.length + "</b> se quedan fuera:<ul>" +
+              faltan.map(function (f) {
+                return "<li>" + esc(f.brand || f.legacy_id) + " — " +
+                  esc(MOTIVOS[f.reason] || f.reason) + "</li>";
+              }).join("") +
+              "</ul></div>"
+            : "") +
+          "</div>" +
+          '<p class="hint">Así va a verse el correo (muestra de <b>' +
+          esc(muestra ? muestra.brand : "") + "</b>, no se envía nada todavía):</p>" +
+          '<iframe class="preview" id="mailPreview" title="Muestra del correo"></iframe>';
+
+        $("modalBody").innerHTML = html;
+
+        // El HTML real lo compone la Edge Function en dry_run
+        if (muestra) {
+          rpc(CFG.rpc.sendEmail, {
+            p_params: { p_token: state.token, p_legacy_ids: [muestra.legacy_id], p_dry_run: true },
+          })
+            .then(function () { return esperarMuestra(muestra.legacy_id); })
+            .then(function (htmlCorreo) {
+              var frame = $("mailPreview");
+              if (frame && htmlCorreo) frame.srcdoc = htmlCorreo;
+            })
+            .catch(function () {
+              var frame = $("mailPreview");
+              if (frame) frame.srcdoc = "<p style='font-family:sans-serif'>No se pudo cargar la muestra.</p>";
+            });
+        }
+
+        var pie =
+          '<div class="confirm">' +
+          '<label for="confirmInput">Escribe <b>' + legacyIds.length + "</b> para confirmar:</label>" +
+          '<input class="field" id="confirmInput" inputmode="numeric" autocomplete="off" placeholder="' +
+          legacyIds.length + '" />' +
+          "</div>" +
+          '<button class="btn btn-primary" id="confirmSend" disabled>Enviar ' +
+          r.listos + " correo(s)</button>";
+
+        $("modalFooter").innerHTML = pie;
+
+        var input = $("confirmInput");
+        var botonOk = $("confirmSend");
+        input.addEventListener("input", function () {
+          botonOk.disabled = input.value.trim() !== String(legacyIds.length);
+        });
+        botonOk.addEventListener("click", function () {
+          enviarCorreo(legacyIds, { confirmado: true });
+        });
+      })
+      .catch(function (err) {
+        $("modalBody").innerHTML = '<div class="alert">No se pudo comprobar: ' + esc(err.message) + "</div>";
+      });
+  }
+
+  /** El envío es asíncrono: el HTML llega a net._http_response en unos segundos. */
+  function esperarMuestra(legacyId) {
+    var intentos = 0;
+    return new Promise(function (resolve) {
+      function consultar() {
+        intentos += 1;
+        rpc(CFG.rpc.emailLog, { p_token: state.token, p_limit: 5 })
+          .then(function (res) {
+            var mio = (res.sends || []).filter(function (s) { return s.legacy_id === legacyId && s.dry_run; })[0];
+            var html = mio && mio.response && mio.response.results && mio.response.results[0]
+              ? mio.response.results[0].html
+              : null;
+            if (html) return resolve(html);
+            if (intentos >= 6) return resolve(null);
+            setTimeout(consultar, 1200);
+          })
+          .catch(function () { resolve(null); });
+      }
+      consultar();
+    });
   }
 
   function copiarTexto(legacyId) {
@@ -435,7 +555,6 @@
         .filter(function (c) { return pasaFiltro(c) && coincideBusqueda(c); })
         .map(function (c) { return c.legacy_id; });
       if (!ids.length) { alert("No hay contactos visibles con el filtro actual."); return; }
-      if (!confirm("Se enviarán " + ids.length + " correos ahora mismo. ¿Continuar?")) return;
       enviarCorreo(ids);
       return;
     }

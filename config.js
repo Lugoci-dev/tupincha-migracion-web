@@ -16,6 +16,7 @@ window.TUPINCHA_WEB = {
     list: "web_migration_list",
     message: "web_migration_message",
     sendEmail: "web_migration_send_email",
+    preview: "web_migration_email_preview",
     emailLog: "web_migration_email_log",
     logout: "web_migration_logout",
   },
