@@ -47,6 +47,9 @@
     </header>
 
     <main class="wrap">
+      <!-- Cada fila va en su propio scroller horizontal: en móvil el toolbar
+           no puede crecer a lo ancho (los botones son nowrap), tiene que
+           desplazarse hacia los lados sin romper la página. -->
       <section class="toolbar">
         <input
           class="field search"
@@ -54,23 +57,36 @@
           type="search"
           placeholder="Buscar por nombre, correo, teléfono, categoría…"
         />
-        <div class="chips" id="chips">
-          <button class="chip active" data-filtro="pendientes">Pendientes</button>
-          <button class="chip" data-filtro="todos">Todos</button>
-          <button class="chip" data-filtro="whatsapp">WhatsApp</button>
-          <button class="chip" data-filtro="correo">Correo</button>
-          <button class="chip" data-filtro="sin-categoria">Sin categoría</button>
-        </div>
-        <div style="flex-basis:100%">
-          <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
-            <span class="progress-text" id="progressText">—</span>
-            <div style="display:flex;gap:8px">
-              <button class="btn btn-ghost" id="csvBtn">Descargar progreso</button>
-              <button class="btn btn-ghost" id="sendVisibleBtn" data-accion="enviar-visibles">Enviar los visibles</button>
-              <button class="btn btn-gold" id="nextBtn">Siguiente pendiente →</button>
-            </div>
+
+        <div class="scroller">
+          <div class="chips" id="chips" role="tablist" aria-label="Filtros">
+            <button class="chip active" data-filtro="pendientes" role="tab">Pendientes</button>
+            <button class="chip" data-filtro="sin-confirmar" role="tab">Sin confirmar</button>
+            <button class="chip" data-filtro="enviados" role="tab">Enviados</button>
+            <button class="chip" data-filtro="fallidos" role="tab">Fallidos</button>
+            <button class="chip" data-filtro="sin-categoria" role="tab">Sin categoría</button>
+            <button class="chip" data-filtro="todos" role="tab">Todos</button>
           </div>
+        </div>
+
+        <div class="scroller">
+          <div class="toolbar-actions">
+            <label class="check-all">
+              <input type="checkbox" id="selectAll" />
+              <span id="selectAllLabel">Seleccionar los visibles</span>
+            </label>
+            <button class="btn btn-ghost" id="csvBtn">Descargar progreso</button>
+            <button class="btn btn-gold" id="sendSelectedBtn" data-accion="enviar-seleccionados" disabled>
+              Enviar los seleccionados
+            </button>
+            <button class="btn btn-primary" id="nextBtn">Siguiente pendiente →</button>
+          </div>
+        </div>
+
+        <div class="progress">
+          <span class="progress-text" id="progressText">—</span>
           <div class="bar"><i id="progressBar" style="width:0%"></i></div>
+          <p class="progress-note" id="progressNote"></p>
         </div>
       </section>
 

@@ -2,9 +2,29 @@
    TuPincha · Campaña de migración
    Lógica del sitio. Sin framework ni build: se publica tal cual en GitHub Pages.
 
-   El estado de "quién ya recibió su mensaje" vive SOLO en el navegador
-   (localStorage). No se envía nada al servidor: por eso cada persona que use
-   la web lleva su propio progreso y puede descargarlo en CSV.
+   ── De dónde sale el estado de cada contacto ─────────────────────────────────
+   Antes todo vivía en localStorage y la app llamaba "enviado" a tres cosas que
+   no son lo mismo:
+
+     · abrir un wa.me / un mailto:  ->  no prueba que se mandara
+     · encolar en Resend            ->  no prueba que Resend lo aceptara
+     · Resend aceptó el correo      ->  esto SÍ es un hecho
+
+   Ahora se separan las dos fuentes y no se mezclan:
+
+     SERVIDOR  web_migration_list() devuelve email_status / email_sent_at /
+              email_attempts, derivados de web_migration_email_log. Es el único
+              hecho comprobable y lo comparten todas las máquinas.
+
+     LOCAL     state.manual guarda solo lo manual (abriste wa.me o mailto:).
+              No hay registro servidor de eso y no lo vamos a inventar, pero
+              tampoco lo tomamos por un envío.
+
+   Precedencia: el servidor manda. Si el servidor dice 'fallido', se muestra
+   fallido aunque localement alguien haya abierto el mailto.
+
+   El envío en masa es SIEMPRE por selección explícita: no existe forma de
+   mandarle a "todos los visibles" por accidente.
    ============================================================================= */
 
 (function () {
@@ -18,8 +38,10 @@
     cargando: false,
     filtro: "pendientes",
     busqueda: "",
-    /** { [legacy_id]: { canal: "whatsapp"|"correo", at: ISO } } */
-    estado: {},
+    /** { [legacy_id]: { canal: "wa"|"mail", at: ISO } } — solo acciones manuales */
+    manual: {},
+    /** Set de legacy_id marcados para envío por correo. */
+    seleccion: {},
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -48,6 +70,10 @@
     if (isNaN(d)) return "";
     return d.toLocaleDateString("es-CU", { day: "2-digit", month: "2-digit" }) +
       " " + d.toLocaleTimeString("es-CU", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function plural(n, singular, plural_) {
+    return n + " " + (n === 1 ? singular : plural_);
   }
 
   /* -------------------------------------------------------------------- rpc */
@@ -120,6 +146,7 @@
     var token = state.token;
     rpc(CFG.rpc.logout, { p_token: token }).catch(function () { /* da igual */ });
     state.token = null;
+    state.seleccion = {};
     store(CFG.storage.token, null);
     store(CFG.storage.tokenExpires, null);
     mostrarLogin();
@@ -132,6 +159,12 @@
     return rpc(CFG.rpc.list, { p_token: state.token })
       .then(function (data) {
         state.contactos = data.contacts || [];
+        // Descarta selección de contactos que ya no estén en la lista.
+        var ids = {};
+        state.contactos.forEach(function (c) { ids[c.legacy_id] = true; });
+        Object.keys(state.seleccion).forEach(function (k) {
+          if (!ids[k]) delete state.seleccion[k];
+        });
         $("loginScreen").hidden = true;
         $("app").hidden = false;
         render();
@@ -149,23 +182,64 @@
       .finally(function () { state.cargando = false; });
   }
 
-  /* ---------------------------------------------------------------- estado */
+  /* ------------------------------------------------- estado manual (local) */
 
-  function leerEstado() {
-    try { state.estado = JSON.parse(cargar(CFG.storage.estado, "{}")) || {}; }
-    catch (e) { state.estado = {}; }
+  function leerManual() {
+    var bruto;
+    try { bruto = JSON.parse(cargar(CFG.storage.estado, "{}")) || {}; }
+    catch (e) { state.manual = {}; return; }
+
+    // Migración: antes el canal era "whatsapp" | "correo" | "correo-enviado".
+    // Los dos primeros son acciones manuales y se conservan. "correo-enviado"
+    // era una suposición local de un envío por Resend: se descarta, porque esa
+    // verdad ahora la tiene el servidor en web_migration_email_log.
+    var nuevo = {};
+    Object.keys(bruto).forEach(function (id) {
+      var e = bruto[id];
+      if (!e) return;
+      if (e.canal === "whatsapp" || e.canal === "wa") nuevo[id] = { canal: "wa", at: e.at };
+      else if (e.canal === "correo" || e.canal === "mail") nuevo[id] = { canal: "mail", at: e.at };
+    });
+    state.manual = nuevo;
+    store(CFG.storage.estado, JSON.stringify(nuevo));
   }
 
-  function marcar(legacyId, canal) {
-    state.estado[legacyId] = { canal: canal, at: new Date().toISOString() };
-    store(CFG.storage.estado, JSON.stringify(state.estado));
+  function marcarManual(legacyId, canal) {
+    state.manual[legacyId] = { canal: canal, at: new Date().toISOString() };
+    store(CFG.storage.estado, JSON.stringify(state.manual));
     render();
   }
 
-  function desmarcar(legacyId) {
-    delete state.estado[legacyId];
-    store(CFG.storage.estado, JSON.stringify(state.estado));
+  function borrarManual(legacyId) {
+    delete state.manual[legacyId];
+    store(CFG.storage.estado, JSON.stringify(state.manual));
     render();
+  }
+
+  /* ------------------------------------------------------------- situación */
+
+  // Un solo lugar que decide qué se le dice a cada contacto. El servidor tiene
+  // precedencia; lo manual solo aparece si el servidor no sabe nada.
+  var SITUACIONES = {
+    enviado:        { etiqueta: "Enviado",        detalle: "confirmado por Resend", tono: "ok",    hecho: true },
+    fallido:        { etiqueta: "Falló",          detalle: "reintentable",          tono: "error", hecho: true },
+    encolado:       { etiqueta: "Encolado",       detalle: "esperando confirmación", tono: "warn", hecho: false },
+    "sin-respuesta": { etiqueta: "Sin respuesta", detalle: "no se pudo confirmar", tono: "warn",   hecho: false },
+    "abierto-wa":   { etiqueta: "WhatsApp abierto", detalle: "sin confirmar",        tono: "muted", hecho: false },
+    "abierto-mail": { etiqueta: "Correo abierto",   detalle: "sin confirmar",        tono: "muted", hecho: false },
+    pendiente:      { etiqueta: "",                detalle: "",                      tono: "idle",  hecho: false },
+  };
+
+  function situacion(c) {
+    if (c.email_status && SITUACIONES[c.email_status]) return c.email_status;
+    var m = state.manual[c.legacy_id];
+    if (m) return m.canal === "wa" ? "abierto-wa" : "abierto-mail";
+    return "pendiente";
+  }
+
+  function info(c) {
+    var clave = situacion(c);
+    return { clave: clave, s: SITUACIONES[clave] };
   }
 
   /* ---------------------------------------------------------------- render */
@@ -181,19 +255,29 @@
       Object.keys(c.category_labels || {}).join(" "),
       (c.subcategory_ids || []).join(" "),
       Object.keys(c.subcategory_labels || {}).join(" "),
+      situacion(c),
     ].join(" ").toLowerCase();
     return todo.indexOf(q) !== -1;
   }
 
   function pasaFiltro(c) {
-    var est = state.estado[c.legacy_id];
+    var clave = situacion(c);
     switch (state.filtro) {
-      case "pendientes": return !est;
-      case "whatsapp": return !!est && est.canal === "whatsapp";
-      case "correo": return !!est && est.canal === "correo";
+      case "pendientes": return clave === "pendiente";
+      case "sin-confirmar":
+        return clave === "abierto-wa" || clave === "abierto-mail" ||
+               clave === "encolado" || clave === "sin-respuesta";
+      case "enviados": return clave === "enviado";
+      case "fallidos": return clave === "fallido";
       case "sin-categoria": return !(c.category_slugs || []).length;
       default: return true;
     }
+  }
+
+  function visibles() {
+    return state.contactos.filter(function (c) {
+      return pasaFiltro(c) && coincideBusqueda(c);
+    });
   }
 
   function tagsDe(c) {
@@ -209,13 +293,32 @@
     return etiquetas.join("");
   }
 
+  function lineaEstado(c) {
+    var i = info(c);
+    if (i.clave === "pendiente") return "";
+
+    var m = state.manual[c.legacy_id];
+    var cuando = c.email_sent_at || (m && m.at) || null;
+
+    return (
+      '<div class="status-line">' +
+        '<span class="pill ' + i.s.tono + '">' + esc(i.s.etiqueta) + "</span>" +
+        "<span>" + esc(i.s.detalle) + "</span>" +
+        (cuando ? "<time>" + esc(fechaCorta(cuando)) + "</time>" : "") +
+        (c.email_attempts > 1 ? "<span>· " + c.email_attempts + " intentos</span>" : "") +
+        (m ? '<button class="chip" data-accion="desmarcar" data-id="' + c.legacy_id +
+             '" style="padding:2px 9px;font-size:11px">quitar marca</button>' : "") +
+      "</div>"
+    );
+  }
+
   function tarjeta(c) {
-    var est = state.estado[c.legacy_id];
+    var i = info(c);
     var cont = c.contact || {};
+    var sel = !!state.seleccion[c.legacy_id];
     var detalles = [];
     if (cont.specialty) detalles.push("<b>Oficio:</b> " + esc(cont.specialty));
     if (cont.region_text || cont.address_text) {
-      // municipality primero, provincia después (region_text = estado)
       var zona = [cont.address_text, cont.region_text].filter(Boolean).join(", ");
       detalles.push("<b>Zona:</b> " + esc(zona));
     }
@@ -228,8 +331,13 @@
     acciones += '<button class="btn btn-outline" data-accion="enviar" data-id="' + c.legacy_id + '">Enviar</button>';
 
     return (
-      '<article class="card' + (est ? " enviado" : "") + '">' +
-        "<h3>" + esc(c.brand) + "</h3>" +
+      '<article class="card ' + i.clave + (sel ? " seleccionada" : "") + '">' +
+        '<div class="card-top">' +
+          '<input class="card-pick" type="checkbox" data-accion="elegir" data-id="' + c.legacy_id + '"' +
+            (sel ? " checked" : "") +
+            ' aria-label="Seleccionar a ' + esc(c.brand) + ' para envío por correo" />' +
+          "<h3>" + esc(c.brand) + "</h3>" +
+        "</div>" +
         '<div class="meta">' + detalles.join(" · ") + "</div>" +
         '<div class="tags">' + tagsDe(c) + "</div>" +
         '<div class="meta plan">' +
@@ -240,53 +348,87 @@
         (cont.bio ? '<p class="bio">' + esc(cont.bio) + "</p>" : "") +
         '<div class="contact">' +
           (c.phone ? "<span>📱 " + esc(c.phone) + "</span>" : "") +
-          "<span>✉️ <a href=\"mailto:" + esc(c.email) + '">' + esc(c.email) + "</a></span>" +
+          "<span>✉️ <a href=\"mailto:" + esc(c.email) + '\">' + esc(c.email) + "</a></span>" +
         "</div>" +
-        (est
-          ? '<div class="status-line">✓ Enviado por ' +
-            (est.canal === "whatsapp" ? "WhatsApp" : "correo") +
-            " · " + esc(fechaCorta(est.at)) +
-            ' <button class="chip" data-accion="desmarcar" data-id="' + c.legacy_id +
-            '" style="padding:2px 9px;font-size:11px">quitar</button></div>"'
-          : "") +
+        lineaEstado(c) +
         '<div class="actions">' + acciones + "</div>" +
       "</article>"
     );
   }
 
+  /** Scrollers: el degradado solo aparece si de verdad hay más contenido. */
+  function ajustarScrollers() {
+    Array.prototype.forEach.call(document.querySelectorAll(".scroller"), function (s) {
+      s.classList.toggle("overflow", s.scrollWidth > s.clientWidth + 1);
+    });
+  }
+
   function render() {
-    var visibles = state.contactos.filter(function (c) {
-      return pasaFiltro(c) && coincideBusqueda(c);
+    var vis = visibles();
+
+    var confirmados = 0, sinConfirmar = 0, fallidos = 0, pendientes = 0;
+    state.contactos.forEach(function (c) {
+      var k = situacion(c);
+      if (k === "enviado") confirmados += 1;
+      else if (k === "fallido") fallidos += 1;
+      else if (k === "pendiente") pendientes += 1;
+      else sinConfirmar += 1;
     });
 
-    var enviados = state.contactos.filter(function (c) { return !!state.estado[c.legacy_id]; }).length;
     var total = state.contactos.length;
-    var pct = total ? Math.round((enviados / total) * 100) : 0;
+    var pct = total ? Math.round((confirmados / total) * 100) : 0;
 
-    $("counterBadge").textContent = enviados + " / " + total;
+    $("counterBadge").textContent = confirmados + " / " + total;
     $("progressBar").style.width = pct + "%";
     $("progressText").textContent =
-      enviados + " de " + total + " contactados (" + pct + "%) · " +
-      "te faltan " + (total - enviados);
+      confirmados + " confirmados · " + sinConfirmar + " sin confirmar · " +
+      fallidos + " fallidos · " + pendientes + " pendientes";
 
-    $("grid").innerHTML = visibles.map(tarjeta).join("");
-    $("emptyMsg").hidden = visibles.length > 0;
+    // La nota solo aparece cuando hay algo que avisar. Si todo está confirmado
+    // o nada se tocó, ocupa 50px de una pantalla de 844 para decir nada.
+    var nota = $("progressNote");
+    if (sinConfirmar + fallidos > 0) {
+      nota.hidden = false;
+      nota.textContent =
+        "La barra solo cuenta los que Resend confirmó. Abrir un mailto: o un wa.me " +
+        "no prueba que el mensaje saliera.";
+    } else {
+      nota.hidden = true;
+      nota.textContent = "";
+    }
+
+    var nSel = Object.keys(state.seleccion).length;
+    var btn = $("sendSelectedBtn");
+    btn.disabled = nSel === 0;
+    btn.textContent = nSel === 0
+      ? "Enviar los seleccionados"
+      : "Enviar a " + nSel + (nSel === 1 ? " seleccionado" : " seleccionados");
+
+    var sel = $("selectAll");
+    var visIds = vis.map(function (c) { return c.legacy_id; });
+    var todosSel = visIds.length > 0 && visIds.every(function (id) { return state.seleccion[id]; });
+    var algunosSel = visIds.some(function (id) { return state.seleccion[id]; });
+    sel.checked = todosSel;
+    sel.indeterminate = !todosSel && algunosSel;
+    $("selectAllLabel").textContent = algunosSel
+      ? "Quitar de la selección (" + visIds.filter(function (id) { return state.seleccion[id]; }).length + ")"
+      : "Seleccionar los visibles (" + visIds.length + ")";
+
+    $("grid").innerHTML = vis.map(tarjeta).join("");
+    $("emptyMsg").hidden = vis.length > 0;
+    ajustarScrollers();
   }
 
   /* ----------------------------------------------------------------- modal */
 
-  var modalActual = null;
-
   function cerrarModal() {
     $("modalBg").hidden = true;
-    modalActual = null;
   }
 
   function abrirModal(legacyId) {
     var c = state.contactos.filter(function (x) { return x.legacy_id === legacyId; })[0];
     if (!c) return;
 
-    modalActual = c;
     $("modalTitle").textContent = c.brand;
     $("modalBody").innerHTML = '<p class="hint">Cargando el mensaje…</p>';
     $("modalFooter").innerHTML = "";
@@ -301,11 +443,16 @@
             (m.phone ? '<div class="cred"><span>Teléfono</span><b>' + esc(m.phone) + "</b></div>" : "") +
           "</div>";
 
+        var i = info(c);
+
         var texto =
           credenciales +
           '<div class="msg">' + esc(m.wa_message) + "</div>" +
           '<p class="hint">Este texto es el que se envía por WhatsApp. ' +
-          "El correo lleva su propio asunto y cuerpo, con el mismo contenido.</p>";
+          "El correo lleva su propio asunto y cuerpo, con el mismo contenido." +
+          (i.clave === "pendiente" ? "" :
+            '<br/><br/><b>Estado actual:</b> ' + esc(i.s.etiqueta) + " — " + esc(i.s.detalle) + ".") +
+          "</p>";
 
         var pie = "";
         if (m.wa_digits) {
@@ -332,11 +479,15 @@
     return rpc(CFG.rpc.message, { p_token: state.token, p_legacy_id: legacyId });
   }
 
+  /**
+   * Abrir wa.me / mailto: NO es un envío. Se marca como "abierto" y con eso
+   * basta: la web deja de fingir que el mensaje salió.
+   */
   function abrirWa(legacyId) {
     mensajeDe(legacyId).then(function (m) {
       var url = "https://wa.me/" + m.wa_digits + "?text=" + encodeURIComponent(m.wa_message);
       window.open(url, "_blank", "noopener");
-      marcar(legacyId, "whatsapp");
+      marcarManual(legacyId, "wa");
     }).catch(function (err) { alert("No se pudo abrir WhatsApp: " + err.message); });
   }
 
@@ -346,48 +497,53 @@
         "?subject=" + encodeURIComponent(m.email_subject) +
         "&body=" + encodeURIComponent(m.email_body);
       window.location.href = url;
-      marcar(legacyId, "correo");
+      marcarManual(legacyId, "mail");
     }).catch(function (err) { alert("No se pudo abrir el correo: " + err.message); });
   }
 
   /**
-   * Envío real por correo: la RPC encola la llamada a la Edge Function, que
-   * la manda por Resend. Devuelve "queued" (es asíncrono), así que el estado
-   * real se consulta luego con web_migration_email_log.
+   * Envío real por correo: la RPC encola la llamada a la Edge Function, que la
+   * manda por Resend. Devuelve "queued" (es asíncrono), así que el estado real
+   * no se sabe ahora: queda 'encolado' y web_migration_list() lo confirma (o lo
+   * marca SIN_RESPUESTA) en la próxima carga.
    *
-   * `legacyIds` con más de un contacto pasa SIEMPRE por la prueba previa:
-   * validación en Supabase + muestra del correo + escribir el número a mano.
+   * El estado NO se marca localmente. Antes ponía 'correo-enviado' en el
+   * navegador, que era una suposición; ahora lo dice el servidor.
    */
   function enviarCorreo(legacyIds, opciones) {
     opciones = opciones || {};
     if (!state.token) { alert("La sesión caducó. Vuelve a entrar."); return; }
 
-    var varios = legacyIds && legacyIds.length > 1;
-    if (varios && !opciones.confirmado) {
+    if (legacyIds.length > 1 && !opciones.confirmado) {
       abrirConfirmacion(legacyIds);
       return;
     }
 
-    var boton = document.querySelector('[data-accion="enviar-visibles"]');
-    if (boton) { boton.disabled = true; boton.textContent = "Enviando…"; }
+    var btn = $("sendSelectedBtn");
+    var previo = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Enviando…";
 
     return rpc(CFG.rpc.sendEmail, {
       p_params: { p_token: state.token, p_legacy_ids: legacyIds, p_dry_run: false },
     })
       .then(function (res) {
-        (legacyIds || []).forEach(function (id) { marcar(id, "correo-enviado"); });
+        // Los que se mandaron salen de la selección: ya no son "pendientes de enviar".
+        legacyIds.forEach(function (id) { delete state.seleccion[id]; });
         cerrarModal();
         alert(
           "Encolados: " + res.queued + " correo(s).\n\n" +
-          "Resend los manda en segundo plano. El estado real de cada uno está en\n" +
-          "web_migration_email_log."
+          "Resend los manda en segundo plano. Esto NO confirma que salieran:\n" +
+          "recarga la lista en unos segundos para ver el estado real de cada uno."
         );
+        return cargarLista();
       })
       .catch(function (err) {
         alert("No se pudo encolar el envío: " + err.message);
       })
       .finally(function () {
-        if (boton) { boton.disabled = false; boton.textContent = "Enviar los visibles"; }
+        btn.textContent = previo;
+        btn.disabled = !Object.keys(state.seleccion).length;
       });
   }
 
@@ -402,20 +558,41 @@
 
   /**
    * Antes de mandar a más de uno: valida en Supabase (que no llama a la Edge
-   * Function) y muestra el HTML real del primer contacto, Composite lo pide
-   * con p_dry_run. Nada sale hasta que escribas el número de destinatarios.
+   * Function) y muestra el HTML real del primer contacto. Nada sale hasta que
+   * escribas el número de destinatarios.
+   *
+   * Y sobre todo: la lista de QUIÉN va a recibirlo. Pedir que escribas un
+   * número no dice a quién se lo mandas.
    */
   function abrirConfirmacion(legacyIds) {
-    modalActual = null;
     $("modalTitle").textContent = "Enviar correos";
-    $("modalBody").innerHTML = '<p class="hint">Comprobando los ' + legacyIds.length + " contactos…</p>";
+    $("modalBody").innerHTML = '<p class="hint">Comprobando ' + plural(legacyIds.length, "contacto", "contactos") + "…</p>";
     $("modalFooter").innerHTML = "";
     $("modalBg").hidden = false;
 
     rpc(CFG.rpc.preview, { p_params: { p_token: state.token, p_legacy_ids: legacyIds } })
       .then(function (r) {
+        // Si la RPC no devuelve la forma esperada, NO se construye un pie de
+        // modal con "undefined" dentro: es mejor fallar con un mensaje claro.
+        if (!r || typeof r.listos !== "number") {
+          $("modalBody").innerHTML =
+            '<div class="alert">La comprobación no devolvió datos válidos. ' +
+            "No se envió nada. Recarga la página e intentá de nuevo.</div>";
+          $("modalFooter").innerHTML = "";
+          return;
+        }
         var faltan = r.faltan || [];
         var muestra = r.muestra;
+
+        var porLegacyId = {};
+        state.contactos.forEach(function (c) { porLegacyId[c.legacy_id] = c; });
+
+        var lista = legacyIds.map(function (id) { return porLegacyId[id]; }).filter(Boolean);
+        var LIMITE = 40;
+        var items = lista.slice(0, LIMITE).map(function (c) {
+          return "<li><b>" + esc(c.brand) + "</b><span>" + esc(c.email) + "</span></li>";
+        }).join("");
+        var resto = lista.length - LIMITE;
 
         var html =
           '<div class="check"><div class="check-ok"><b>' + r.listos + "</b> listos para enviar</div>" +
@@ -428,9 +605,16 @@
               "</ul></div>"
             : "") +
           "</div>" +
-          '<p class="hint">Así va a verse el correo (muestra de <b>' +
-          esc(muestra ? muestra.brand : "") + "</b>, no se envía nada todavía):</p>" +
-          '<iframe class="preview" id="mailPreview" title="Muestra del correo"></iframe>';
+          "<p class=\"hint\">Estos son los destinatarios exactos. Cada uno recibe su propia contraseña.</p>" +
+          '<ul class="destinatarios">' + items +
+          (resto > 0 ? '<li class="mas">… y ' + resto + " más</li>" : "") +
+          "</ul>" +
+          (muestra
+            ? '<p class="hint">Así va a verse el correo (muestra de <b>' +
+              esc(muestra.brand) + "</b>, no se envía nada todavía):</p>" +
+              '<iframe class="preview" id="mailPreview" title="Muestra del correo"></iframe>'
+            : '<p class="hint">No se pudo traer una muestra del correo, pero los destinatarios ' +
+              "son los de arriba. Nada sale hasta que escribas el número.</p>");
 
         $("modalBody").innerHTML = html;
 
@@ -457,7 +641,7 @@
           legacyIds.length + '" />' +
           "</div>" +
           '<button class="btn btn-primary" id="confirmSend" disabled>Enviar ' +
-          r.listos + " correo(s)</button>";
+          plural(r.listos, "correo", "correos") + "</button>";
 
         $("modalFooter").innerHTML = pie;
 
@@ -513,13 +697,21 @@
   /* ------------------------------------------------------------------- csv */
 
   function descargarCsv() {
-    var filas = [["legacy_id", "brand", "email", "telefono", "canal", "enviado_el", "estado"]];
+    var filas = [[
+      "legacy_id", "brand", "email", "telefono",
+      "situacion", "es_hecho", "origen",
+      "servidor_email_status", "servidor_email_sent_at", "intentos",
+      "manual_canal", "manual_at",
+    ]];
     state.contactos.forEach(function (c) {
-      var est = state.estado[c.legacy_id];
+      var i = info(c);
+      var m = state.manual[c.legacy_id];
       filas.push([
         c.legacy_id, c.brand, c.email, c.phone || "",
-        est ? est.canal : "", est ? est.at : "",
-        est ? "enviado" : "pendiente",
+        i.s.etiqueta || "pendiente", i.s.hecho ? "si" : "no",
+        i.clave.indexOf("abierto-") === 0 ? "manual" : "servidor",
+        c.email_status || "", c.email_sent_at || "", c.email_attempts || 0,
+        m ? m.canal : "", m ? m.at : "",
       ]);
     });
 
@@ -538,6 +730,21 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
+  /* ---------------------------------------------------------------- selección */
+
+  function alternar(legacyId, forzar) {
+    var id = String(legacyId);
+    var ahora = !state.seleccion[id];
+    var queda = forzar === undefined ? ahora : !!forzar;
+    if (queda) state.seleccion[id] = true;
+    else delete state.seleccion[id];
+    render();
+  }
+
+  function seleccionados() {
+    return state.contactos.filter(function (c) { return !!state.seleccion[c.legacy_id]; });
+  }
+
   /* ----------------------------------------------------------------- events */
 
   document.addEventListener("click", function (ev) {
@@ -547,21 +754,23 @@
     var accion = boton.getAttribute("data-accion");
     var id = parseInt(boton.getAttribute("data-id"), 10);
 
+    if (accion === "elegir") { alternar(id); return; }
     if (accion === "whatsapp") { abrirWa(id); return; }
     if (accion === "correo") { abrirMail(id); return; }
     if (accion === "enviar") { enviarCorreo([id]); return; }
-    if (accion === "enviar-visibles") {
-      var ids = state.contactos
-        .filter(function (c) { return pasaFiltro(c) && coincideBusqueda(c); })
-        .map(function (c) { return c.legacy_id; });
-      if (!ids.length) { alert("No hay contactos visibles con el filtro actual."); return; }
-      enviarCorreo(ids);
-      return;
-    }
-    if (accion === "desmarcar") { desmarcar(id); return; }
+    if (accion === "desmarcar") { borrarManual(id); return; }
     if (accion === "abrir-wa") { abrirWa(id); cerrarModal(); return; }
     if (accion === "abrir-mail") { abrirMail(id); cerrarModal(); return; }
     if (accion === "copiar") { copiarTexto(id); return; }
+
+    if (accion === "enviar-seleccionados") {
+      // Sin selección no hay envío. Nunca "todos los visibles": el envío en
+      // masa es siempre lo que el usuario marcó uno por uno.
+      var ids = seleccionados().map(function (c) { return c.legacy_id; });
+      if (!ids.length) { alert("Selecciona al menos un contacto."); return; }
+      enviarCorreo(ids);
+      return;
+    }
   });
 
   $("loginForm").addEventListener("submit", function (ev) {
@@ -582,6 +791,11 @@
     render();
   });
 
+  $("selectAll").addEventListener("change", function (ev) {
+    var marcar = ev.target.checked;
+    visibles().forEach(function (c) { alternar(c.legacy_id, marcar); });
+  });
+
   $("chips").addEventListener("click", function (ev) {
     var chip = ev.target.closest(".chip");
     if (!chip) return;
@@ -594,11 +808,11 @@
   });
 
   $("nextBtn").addEventListener("click", function () {
-    var pendientes = state.contactos.filter(function (c) {
-      return !state.estado[c.legacy_id] && c.wa_digits;
+    var pendientes = visibles().filter(function (c) {
+      return situacion(c) === "pendiente" && c.wa_digits;
     });
     if (!pendientes.length) {
-      alert("No quedan contactos pendientes con teléfono.");
+      alert("No quedan contactos pendientes con teléfono en este filtro.");
       return;
     }
     abrirModal(pendientes[0].legacy_id);
@@ -606,7 +820,7 @@
 
   /* ------------------------------------------------------------------- boot */
 
-  leerEstado();
+  leerManual();
   var token = cargar(CFG.storage.token, null);
   var expira = cargar(CFG.storage.tokenExpires, null);
 
