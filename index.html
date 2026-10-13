@@ -3,9 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>TuPincha · Acceso de proveedores</title>
+  <title>TuPincha · Campaña de proveedores</title>
   <meta name="robots" content="noindex, nofollow" />
-  <meta name="description" content="Sitio temporal de acceso para proveedores de TuPincha." />
+  <meta name="referrer" content="no-referrer" />
+  <!-- Aquí se maneja una sesión de administrador: solo corre código de este
+       sitio y solo se habla con el proyecto de Supabase. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src https://bexwnqesbmsfazpabshm.supabase.co; frame-src 'self'; base-uri 'none'; form-action 'none'" />
   <link rel="icon" href="assets/favicon.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -13,58 +17,64 @@
   <!-- ---------------------------------------------------------------- login -->
   <section class="login-screen" id="loginScreen" hidden>
     <div class="login-card">
-      <img src="assets/icon.png" alt="TuPincha" />
-      <h1>Acceso de proveedores</h1>
-      <p>Introduce el código de campaña para ver los contactos.</p>
-      <form id="loginForm" autocomplete="off">
-        <input
-          class="field"
-          id="passcodeInput"
-          type="password"
-          placeholder="Código de campaña"
-          autocomplete="current-password"
-          required
-        />
+      <img src="assets/icon.png" alt="" width="64" height="64" />
+      <h1>Campaña de proveedores</h1>
+      <p>Entra con tu cuenta de administrador de TuPincha.</p>
+      <form id="loginForm">
+        <label class="f"><span>Correo</span>
+          <input class="field" id="emailInput" type="email" autocomplete="username" required />
+        </label>
+        <label class="f"><span>Contraseña</span>
+          <input class="field" id="passwordInput" type="password" autocomplete="current-password" required />
+        </label>
         <button class="btn btn-primary btn-block" type="submit" id="loginBtn">Entrar</button>
       </form>
-      <div class="alert" id="loginError" hidden></div>
+      <div class="alert" id="loginError" role="alert" hidden></div>
     </div>
   </section>
 
   <!-- ------------------------------------------------------------------ app -->
   <div id="app" hidden>
     <header class="topbar">
-      <img src="assets/icon.png" alt="" />
-      <div>
-        <div class="title">TuPincha</div>
-        <div class="subtitle">Campaña de acceso para proveedores</div>
+      <div class="topbar-row">
+        <img src="assets/icon.png" alt="" width="34" height="34" />
+        <div class="brandline">
+          <div class="title">TuPincha</div>
+          <div class="subtitle">Campaña de proveedores</div>
+        </div>
+        <span class="spacer"></span>
+        <span class="who" id="adminEmail"></span>
+        <button class="btn btn-onnavy" id="logoutBtn">Salir</button>
       </div>
-      <div class="spacer"></div>
-      <span class="badge" id="counterBadge">0 / 0</span>
-      <button class="btn btn-ghost" id="logoutBtn" style="color:#fff;border-color:rgba(255,255,255,.35)">
-        Salir
-      </button>
+      <nav class="tabs" id="tabs" role="tablist" aria-label="Secciones">
+        <button class="tab" id="tab-contactos" data-vista="contactos" role="tab">Contactos</button>
+        <button class="tab" id="tab-nuevo" data-vista="nuevo" role="tab">Nuevo proveedor</button>
+        <button class="tab" id="tab-agente" data-vista="agente" role="tab">
+          Agente <span class="count" id="agentBadge" hidden></span>
+        </button>
+      </nav>
     </header>
 
-    <main class="wrap">
-      <!-- Cada fila va en su propio scroller horizontal: en móvil el toolbar
-           no puede crecer a lo ancho (los botones son nowrap), tiene que
-           desplazarse hacia los lados sin romper la página. -->
+    <!-- ------------------------------------------------------- contactos -->
+    <main class="wrap" id="view-contactos" role="tabpanel" aria-labelledby="tab-contactos" hidden>
+      <section class="summary">
+        <div class="stats" id="stats"></div>
+        <div class="bar" id="progress" role="progressbar" aria-label="Contactos avisados"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="progressBar"></i></div>
+      </section>
+
       <section class="toolbar">
-        <input
-          class="field search"
-          id="searchInput"
-          type="search"
-          placeholder="Buscar por nombre, correo, teléfono, categoría…"
-        />
+        <input class="field search" id="searchInput" type="search"
+               placeholder="Buscar por nombre, correo, teléfono, oficio, zona…" aria-label="Buscar contactos" />
 
         <div class="scroller">
-          <div class="chips" id="chips" role="tablist" aria-label="Filtros">
-            <button class="chip active" data-filtro="pendientes" role="tab">Pendientes</button>
+          <div class="chips" id="chips" role="tablist" aria-label="Filtrar por estado">
+            <button class="chip" data-filtro="por-avisar" role="tab">Por avisar</button>
             <button class="chip" data-filtro="sin-confirmar" role="tab">Sin confirmar</button>
-            <button class="chip" data-filtro="enviados" role="tab">Enviados</button>
+            <button class="chip" data-filtro="avisados" role="tab">Avisados</button>
             <button class="chip" data-filtro="fallidos" role="tab">Fallidos</button>
-            <button class="chip" data-filtro="sin-categoria" role="tab">Sin categoría</button>
+            <button class="chip" data-filtro="activadas" role="tab">Cuenta activada</button>
+            <button class="chip" data-filtro="nuevos" role="tab">Nuevos</button>
             <button class="chip" data-filtro="todos" role="tab">Todos</button>
           </div>
         </div>
@@ -75,40 +85,130 @@
               <input type="checkbox" id="selectAll" />
               <span id="selectAllLabel">Seleccionar los visibles</span>
             </label>
-            <button class="btn btn-ghost" id="csvBtn">Descargar progreso</button>
-            <button class="btn btn-gold" id="sendSelectedBtn" data-accion="enviar-seleccionados" disabled>
-              Enviar los seleccionados
-            </button>
-            <button class="btn btn-primary" id="nextBtn">Siguiente pendiente →</button>
+            <span class="spacer"></span>
+            <button class="btn btn-ghost" id="reloadBtn">Actualizar</button>
+            <button class="btn btn-ghost" id="csvBtn">Descargar CSV</button>
+            <button class="btn btn-gold" id="sendSelectedBtn" disabled>Enviar correo a los seleccionados</button>
           </div>
-        </div>
-
-        <div class="progress">
-          <span class="progress-text" id="progressText">—</span>
-          <div class="bar"><i id="progressBar" style="width:0%"></i></div>
-          <p class="progress-note" id="progressNote"></p>
         </div>
       </section>
 
       <div class="grid" id="grid"></div>
-      <p class="empty" id="emptyMsg" hidden>No hay contactos que coincidan con el filtro.</p>
+      <p class="empty" id="emptyMsg" hidden></p>
+    </main>
+
+    <!-- ------------------------------------------------- nuevo proveedor -->
+    <main class="wrap narrow" id="view-nuevo" role="tabpanel" aria-labelledby="tab-nuevo" hidden>
+      <form class="panel" id="providerForm" novalidate>
+        <h2 id="formTitle">Nuevo proveedor</h2>
+        <p class="lead">
+          Se crea su cuenta sin confirmar y su perfil queda pendiente. Cuando el proveedor entre en la app y
+          confirme su correo, el perfil y los servicios se publican solos. La contraseña se genera aquí y va en su aviso.
+        </p>
+        <p class="alert info" id="formOrigin" hidden>
+          Esto lo propuso el agente a partir de tu texto. Revísalo: lo que guardes es lo que se crea.
+        </p>
+
+        <fieldset>
+          <legend>Cuenta</legend>
+          <div class="fields">
+            <label class="f wide"><span>Nombre comercial o marca</span>
+              <input class="field" id="f_brand" maxlength="120" required autocomplete="off" />
+            </label>
+            <label class="f"><span>Correo</span>
+              <input class="field" id="f_email" type="email" required autocomplete="off" spellcheck="false" />
+            </label>
+            <label class="f"><span>Teléfono <i>(8 dígitos, o con +código)</i></span>
+              <input class="field" id="f_phone" type="tel" inputmode="tel" autocomplete="off" />
+            </label>
+            <label class="f"><span>Nombre <i>(opcional)</i></span>
+              <input class="field" id="f_first_name" maxlength="80" autocomplete="off" />
+            </label>
+            <label class="f"><span>Apellido <i>(opcional)</i></span>
+              <input class="field" id="f_last_name" maxlength="80" autocomplete="off" />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Perfil</legend>
+          <div class="fields">
+            <label class="f"><span>Oficio</span>
+              <input class="field" id="f_specialty" maxlength="200" placeholder="Plomero, Electricista…" autocomplete="off" />
+            </label>
+            <label class="f"><span>Provincia</span>
+              <input class="field" id="f_region_text" list="regionList" maxlength="120" autocomplete="off" />
+            </label>
+            <label class="f"><span>Municipio</span>
+              <input class="field" id="f_address_text" list="cityList" maxlength="120" autocomplete="off" />
+            </label>
+            <label class="f wide"><span>Descripción <i>(opcional)</i></span>
+              <textarea class="field" id="f_bio" rows="3" maxlength="4000"></textarea>
+            </label>
+          </div>
+          <datalist id="regionList"></datalist>
+          <datalist id="cityList"></datalist>
+        </fieldset>
+
+        <fieldset>
+          <legend>Servicios</legend>
+          <p class="hint">Opcionales. Solo se pueden elegir subcategorías que existen en el catálogo de la app.</p>
+          <div id="serviceRows"></div>
+          <button type="button" class="btn btn-outline" id="addServiceBtn">Añadir servicio</button>
+        </fieldset>
+
+        <div id="formIssues" role="alert" hidden></div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="resetBtn">Limpiar</button>
+          <button type="submit" class="btn btn-primary" id="createBtn">Crear proveedor</button>
+        </div>
+      </form>
+    </main>
+
+    <!-- ----------------------------------------------------------- agente -->
+    <main class="wrap narrow" id="view-agente" role="tabpanel" aria-labelledby="tab-agente" hidden>
+      <form class="panel" id="agentForm">
+        <h2>Crear desde texto</h2>
+        <p class="lead">
+          Pega un mensaje, una lista o una tabla con uno o varios proveedores. El agente los ordena y te devuelve
+          propuestas; nada se crea hasta que tú lo apruebes.
+        </p>
+        <p class="alert warn" id="agentSetup" hidden></p>
+        <label class="f"><span>Texto</span>
+          <textarea class="field" id="agentText" rows="9" maxlength="20000" required
+                    placeholder="Yoel, plomero del Cerro, 5 234 5678, yoel@correo.com…"></textarea>
+        </label>
+        <label class="f"><span>Instrucciones para el agente <i>(opcional)</i></span>
+          <input class="field" id="agentInstructions" maxlength="2000"
+                 placeholder="Todos son de Holguín · ignora los que no tengan teléfono…" />
+        </label>
+        <p class="hint">
+          El texto se envía a un modelo de IA gratuito de un tercero para analizarlo. No pegues nada que no deba salir de TuPincha.
+        </p>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="agentSubmit">Analizar</button>
+        </div>
+      </form>
+
+      <div id="jobs"></div>
+      <p class="empty" id="jobsEmpty" hidden>Todavía no hay análisis.</p>
     </main>
   </div>
 
-  <!-- ---------------------------------------------------------------- modal -->
-  <div class="modal-bg" id="modalBg" hidden>
-    <div class="modal">
-      <header>
-        <h3 id="modalTitle">Mensaje</h3>
-        <div class="spacer" style="flex:1"></div>
-        <button class="btn btn-ghost" id="modalClose">Cerrar</button>
-      </header>
-      <div class="body" id="modalBody"></div>
-      <footer id="modalFooter"></footer>
-    </div>
-  </div>
+  <!-- --------------------------------------------------------------- diálogo -->
+  <dialog class="dialog" id="dialog" aria-labelledby="dialogTitle">
+    <header>
+      <h3 id="dialogTitle"></h3>
+      <button class="btn btn-ghost" id="dialogClose">Cerrar</button>
+    </header>
+    <div class="body" id="dialogBody"></div>
+    <footer id="dialogFooter" hidden></footer>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
 
   <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

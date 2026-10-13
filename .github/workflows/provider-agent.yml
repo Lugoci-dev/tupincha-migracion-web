@@ -1,0 +1,66 @@
+name: provider-agent
+
+# ─────────────────────────────────────────────────────────────
+# Convierte texto plano en PROPUESTAS de proveedor.
+#
+# Canal: la web llama a la RPC web_campaign_agent_submit, que guarda el
+# texto en Supabase y dispara este workflow con el id del trabajo.
+#
+# Este repo y sus logs son PÚBLICOS:
+#   · el único input es un uuid: el texto nunca viaja por aquí;
+#   · agent/run.py no imprime ni el texto ni la salida del modelo;
+#   · CAMPAIGN_AGENT_KEY solo abre las dos RPC del runner (no es la
+#     service role). La URL y la publishable key ya son públicas.
+#
+# Secreto requerido:  CAMPAIGN_AGENT_KEY
+# Variable opcional:  AGENT_MODELS  (lista separada por comas)
+#
+# Lanzado a mano y sin job_id procesa los trabajos que estén en cola.
+# ─────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: 'id del trabajo (uuid). Vacío = los que estén en cola'
+        required: false
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: provider-agent-${{ inputs.job_id || 'cola' }}
+  cancel-in-progress: false
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Instalar OpenCode
+        run: |
+          npm install -g opencode-ai@1.18.32
+          opencode --version
+
+      # La clave se deja en un fichero de un solo uso: run.py lo lee y lo borra
+      # antes de lanzar el modelo, así ningún proceso la lleva en su entorno.
+      - name: Preparar clave del runner
+        env:
+          CAMPAIGN_AGENT_KEY: ${{ secrets.CAMPAIGN_AGENT_KEY }}
+        run: |
+          umask 077
+          printf '%s' "$CAMPAIGN_AGENT_KEY" > "$RUNNER_TEMP/agent.key"
+
+      - name: Extraer proveedores
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          SUPABASE_URL: https://bexwnqesbmsfazpabshm.supabase.co
+          SUPABASE_ANON_KEY: sb_publishable_TyRR2ceFgxTR67s7N2folg_S3sIGtWu
+          AGENT_KEY_FILE: ${{ runner.temp }}/agent.key
+          AGENT_MODELS: ${{ vars.AGENT_MODELS }}
+        run: python3 agent/run.py
