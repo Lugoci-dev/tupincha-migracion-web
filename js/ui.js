@@ -120,10 +120,11 @@ const PROBLEMAS = {
   EMAIL_EXISTS: "Ya existe una cuenta con ese correo.",
   PHONE_INVALID: "El teléfono no es válido (8 dígitos, o con +código de país).",
   PHONE_DUPLICATE: "Ese teléfono ya lo tiene otro contacto",
-  PHONE_MISSING: "Sin teléfono: solo se le podrá avisar por correo.",
+  PHONE_MISSING: "Sin teléfono: solo se le podrá avisar por correo, y no saldrá en la app hasta que añada uno y lo verifique.",
   SUBCATEGORY_NOT_FOUND: "Servicio fuera del catálogo, no se incluye",
   NO_SERVICES: "Sin servicios: se crea solo la cuenta y el perfil.",
   NO_LOCATION: "Sin ubicación conocida para esa zona: no saldrá en la búsqueda por cercanía hasta que la ponga en la app.",
+  DEFAULT_LOCATION: "Zona sin indicar o no reconocida: se le pone La Habana por defecto para que el perfil quede completo. Corrígela aquí si la sabes; si no, la cambia él en la app. Zona usada",
 };
 
 export function textoProblema(p) {

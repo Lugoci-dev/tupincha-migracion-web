@@ -26,6 +26,15 @@ Cuando el proveedor entra en la app y confirma su correo, el trigger
 `trg_legacy_materialize_provider` crea su perfil de proveedor, sus servicios y
 su ubicación. Un alta sin servicios crea solo la cuenta y el perfil.
 
+El proveedor **no aparece en la app hasta que verifica su teléfono de negocio**
+por SMS: confirmar el correo crea el perfil, verificar el teléfono lo publica.
+Por eso el teléfono del alta tiene que ser el suyo de verdad.
+
+Lo que el alta no traiga se rellena con valores por defecto, para que el perfil
+quede igual de completo que uno registrado en la app: nombre y apellido salen de
+la marca, el país es Cuba, el municipio es la capital de la provincia y, si no
+hay zona, se pone La Habana (la web lo avisa para que se corrija).
+
 ### Catálogo
 
 Una subcategoría que no exista en `public.subcategories` no entra nunca:
