@@ -86,7 +86,7 @@ function mostrarProblemas(problemas) {
 function ponerOrigen(nuevo) {
   origen = nuevo;
   $("formOrigin").hidden = !nuevo;
-  $("formTitle").textContent = nuevo ? "Revisar propuesta del agente" : "Nuevo proveedor";
+  $("formTitle").textContent = nuevo ? "Completar proveedor" : "Nuevo proveedor";
   $("resetBtn").textContent = nuevo ? "Volver al agente" : "Limpiar";
 }
 

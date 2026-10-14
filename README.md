@@ -11,7 +11,7 @@ Supabase.
 |---|---|
 | **Contactos** | Lista de proveedores, a quién se le avisó y por qué vía, y quién ya activó su cuenta. Envío por WhatsApp (`wa.me`), por tu cliente de correo (`mailto:`) o por Resend, de uno en uno o por selección. |
 | **Nuevo proveedor** | Alta manual con un formulario. |
-| **Agente** | Pegas texto plano (un mensaje, una lista) y devuelve propuestas de proveedor para revisar. |
+| **Agente** | Pegas texto plano (un mensaje, una lista) y crea los proveedores que vengan completos. Los que no, quedan para completar. |
 
 ### Qué crea un alta
 
@@ -35,6 +35,11 @@ quede igual de completo que uno registrado en la app: nombre y apellido salen de
 la marca, el país es Cuba, el municipio es la capital de la provincia y, si no
 hay zona, se pone La Habana (la web lo avisa para que se corrija).
 
+El perfil se guarda **en el formato de la app**: provincia y municipio con los
+nombres de su selector ("Havana Province", "Centro Habana"; salen de la API
+CountriesNow) y el teléfono personal solo con dígitos, sin `+`. En la web se
+puede escribir "La Habana" o "holguin": el servidor lo traduce.
+
 ### Catálogo
 
 Una subcategoría que no exista en `public.subcategories` no entra nunca:
@@ -42,7 +47,7 @@ Una subcategoría que no exista en `public.subcategories` no entra nunca:
 - en el formulario se elige de un desplegable cargado con el catálogo vivo;
 - la categoría no se acepta del cliente: se deduce de la subcategoría;
 - lo que proponga el agente fuera del catálogo se descarta en el runner **y**
-  otra vez en la base de datos, y la propuesta lo avisa.
+  otra vez en la base de datos, y el resultado lo avisa.
 
 ### Estados
 
@@ -60,7 +65,8 @@ Una subcategoría que no exista en `public.subcategories` no entra nunca:
 **Cuenta**: *activada* cuando el proveedor confirmó su correo.
 
 **Análisis del agente**: en cola → analizando → listo (o falló, reintentable).
-Cada propuesta queda pendiente, creada o descartada.
+Cada proveedor del texto queda *creado*, *ya existía* (había una cuenta con ese
+correo) o *por completar* (le falta algo, casi siempre el correo).
 
 ## Acceso
 
@@ -78,8 +84,8 @@ Aquí no hay ningún dato de proveedores, ni contraseñas, ni claves privadas.
   agente solo le llega un `job_id`; el texto pegado se lee de Supabase en tiempo
   de ejecución y `agent/run.py` no imprime ni el texto ni la salida del modelo.
 - El runner no usa la *service role*. Su secreto, `CAMPAIGN_AGENT_KEY`, solo
-  abre las dos RPC del agente, y lo que escribe son propuestas que un
-  administrador revisa.
+  abre las dos RPC del agente. Con ella se puede dar de alta un proveedor, y
+  nada más: no lee contactos ni contraseñas.
 - El texto que se pega en **Agente** se envía a un modelo gratuito de un tercero
   (OpenCode Zen). No pegues nada que no deba salir de TuPincha.
 
@@ -110,9 +116,9 @@ web  ──►  web_campaign_agent_submit      guarda el texto y dispara el work
                │  agent/run.py
                ├─ web_campaign_agent_claim    texto + catálogo vivo
                ├─ OpenCode (modelos free)     texto → JSON
-               └─ web_campaign_agent_finish   la BD valida y guarda propuestas
+               └─ web_campaign_agent_finish   la BD valida y crea los completos
                ▼
-web  ──►  revisar → web_campaign_provider_create
+web  ──►  completar los que falten → web_campaign_provider_create
 ```
 
 Secretos:

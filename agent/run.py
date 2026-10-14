@@ -4,9 +4,10 @@ Agente de alta de proveedores (corre en GitHub Actions).
 
   1. web_campaign_agent_claim   -> toma un trabajo: texto pegado + catálogo vivo
   2. OpenCode (modelos free)    -> texto plano -> JSON de proveedores
-  3. web_campaign_agent_finish  -> la base de datos valida y guarda PROPUESTAS
+  3. web_campaign_agent_finish  -> la base de datos valida y crea los completos
 
-El agente no crea cuentas: un administrador revisa cada propuesta en la web.
+La base de datos crea los proveedores que salgan completos y deja el resto
+para que un administrador los complete en la web.
 
 ── Este repositorio y sus logs son PÚBLICOS ───────────────────────────────────
   · Nada de lo que se lee o genera se imprime: ni el texto, ni la salida del
@@ -17,8 +18,8 @@ El agente no crea cuentas: un administrador revisa cada propuesta en la web.
     eso corre en un directorio vacío, con un entorno sin secretos, y la clave
     del runner llega por un fichero que se borra ANTES de lanzarlo: ningún
     proceso la tiene en su entorno.
-  · Esa clave solo abre las dos RPC de arriba (no es la service role), y lo
-    que escribe son propuestas que un administrador revisa.
+  · Esa clave solo abre las dos RPC de arriba (no es la service role): sirve
+    para leer el texto en cola y dar de alta proveedores, nada más.
 
 Solo biblioteca estándar.
 """
@@ -287,7 +288,7 @@ def procesar(trabajo: dict, modelos: list[str]) -> None:
     fin = rpc("web_campaign_agent_finish", {
         "key": AGENT_KEY, "job_id": job_id, "model": usado, "providers": proveedores,
     })
-    log(f"propuestas: {fin.get('proposals', 0)} · descartado por no estar en el texto/catálogo: "
+    log(f"proveedores: {fin.get('proposals', 0)} · creados: {fin.get('created', 0)} · descartado por no estar en el texto/catálogo: "
         f"{cuenta['correos']} correos, {cuenta['telefonos']} teléfonos, {cuenta['servicios']} servicios")
     if fin.get("error"):
         log(f"::warning::{fin['error']}")
