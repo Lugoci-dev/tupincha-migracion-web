@@ -115,7 +115,9 @@ export function confirmar({ titulo, texto, aceptar, peligro }) {
 
 const PROBLEMAS = {
   BRAND_REQUIRED: "Falta el nombre o la marca.",
-  EMAIL_REQUIRED: "Falta el correo: sin correo no se puede crear la cuenta.",
+  EMAIL_REQUIRED: "Falta el correo. Si no tiene, marca «No tiene correo: crear con uno temporal».",
+  EMAIL_PLACEHOLDER: "Sin correo: entrará con uno temporal y la app le pedirá cambiarlo. Usuario",
+  PLACEHOLDER_NEEDS_PHONE: "Sin correo hace falta un teléfono válido: es por donde le llegan sus datos de acceso.",
   EMAIL_INVALID: "El correo no tiene un formato válido.",
   EMAIL_EXISTS: "Ya existe una cuenta con ese correo.",
   PHONE_INVALID: "El teléfono no es válido (8 dígitos, o con +código de país).",

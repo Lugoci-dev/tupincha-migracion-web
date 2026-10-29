@@ -60,12 +60,26 @@ function leer() {
     fila.querySelectorAll("[data-svc]").forEach((el) => { s[el.dataset.svc] = el.value.trim(); });
     return s;
   }).filter((s) => s.subcategory_id);
+  if ($("f_email_placeholder").checked) {
+    p.email = "";
+    p.email_placeholder = true;
+  }
   return p;
+}
+
+/** Sin correo: el campo se vacía y se bloquea, y se explica qué pasará. */
+function pintarCorreoTemporal() {
+  const tmp = $("f_email_placeholder").checked;
+  $("f_email").disabled = tmp;
+  if (tmp) $("f_email").value = "";
+  $("placeholderInfo").hidden = !tmp;
 }
 
 function rellenar(datos) {
   datos = datos || {};
   CAMPOS.forEach((campo) => { $("f_" + campo).value = datos[campo] || ""; });
+  $("f_email_placeholder").checked = !!datos.email_placeholder;
+  pintarCorreoTemporal();
   $("serviceRows").innerHTML = (datos.services || []).map(filaServicio).join("");
   pintarLugares();
   mostrarProblemas(null);
@@ -160,6 +174,7 @@ export function iniciar() {
   });
 
   $("f_region_text").addEventListener("input", pintarLugares);
+  $("f_email_placeholder").addEventListener("change", pintarCorreoTemporal);
 
   $("resetBtn").addEventListener("click", () => {
     const veniaDelAgente = !!origen;

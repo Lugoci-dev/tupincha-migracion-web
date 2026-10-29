@@ -52,6 +52,7 @@ const FALTA = {
 const NOTAS = {
   DEFAULT_LOCATION: () => "Sin zona en el texto: se le puso La Habana.",
   PHONE_MISSING: () => "Sin teléfono.",
+  EMAIL_PLACEHOLDER: (i) => "Sin correo: entra con " + i.detail + ".",
   NO_SERVICES: () => "Sin servicios.",
   NO_LOCATION: () => "Sin ubicación.",
   PHONE_DUPLICATE: (i) => "Mismo teléfono que " + (i.detail || "otro contacto") + ".",
@@ -137,8 +138,15 @@ function fila(t, p) {
   } else {
     const error = (p.issues || []).find((i) => i.level === "error");
     pill = '<span class="pill warn">' + esc((error && FALTA[error.code]) || "Por completar") + "</span>";
+    // Lo único que le falta es el correo y tiene teléfono: se puede crear ya
+    // con un correo temporal (el aviso le llega por WhatsApp).
+    const soloCorreo = error && error.code === "EMAIL_REQUIRED" && d.phone &&
+      (p.issues || []).filter((i) => i.level === "error").length === 1;
     acciones =
-      '<button class="btn btn-primary" data-agente="completar" ' + ids + ">Completar</button>" +
+      (soloCorreo
+        ? '<button class="btn btn-primary" data-agente="temporal" ' + ids + ">Crear con correo temporal</button>" +
+          '<button class="btn btn-outline" data-agente="completar" ' + ids + ">Completar</button>"
+        : '<button class="btn btn-primary" data-agente="completar" ' + ids + ">Completar</button>") +
       '<button class="link" data-agente="descartar" ' + ids + ">Descartar</button>";
   }
 
@@ -245,7 +253,35 @@ async function actualizar(params, mensajeError) {
   }
 }
 
+async function crearConCorreoTemporal(b) {
+  const { p } = buscar(b.dataset.job, b.dataset.prop);
+  if (!p) return;
+  b.disabled = true;
+  // Las coordenadas y el formato de la app los vuelve a calcular el servidor.
+  const { lat, lng, precision, state, city, ...proveedor } = p.data;
+  try {
+    const res = await rpc("providerCreate", {
+      provider: Object.assign(proveedor, { email: "", email_placeholder: true }),
+      job_id: b.dataset.job,
+      proposal_id: b.dataset.prop,
+    });
+    if (!res.ok) {
+      b.disabled = false;
+      aviso("No se pudo crear: " + (res.issues || []).filter((i) => i.level === "error")
+        .map((i) => textoProblema(i)).join(" "), "error");
+      return;
+    }
+    aviso((p.data.brand || "Proveedor") + " creado con correo temporal. Su cuenta ya está activa: avísale por WhatsApp.", "ok");
+    emitir("proveedor-creado", { irALista: false });
+    await cargar();
+  } catch (err) {
+    b.disabled = false;
+    aviso("No se pudo crear: " + motivo(err), "error");
+  }
+}
+
 const ACCIONES = {
+  temporal: (b) => crearConCorreoTemporal(b),
   completar: (b) => {
     const { p } = buscar(b.dataset.job, b.dataset.prop);
     if (p) emitir("revisar-propuesta", { job_id: b.dataset.job, proposal_id: p.id, data: p.data, issues: p.issues });

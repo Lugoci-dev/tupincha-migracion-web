@@ -233,6 +233,10 @@ legend {
 .service-row .grow { flex: 1 1 220px; }
 .service-row .price { flex: 0 1 110px; }
 
+.check-inline { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--g-600); cursor: pointer; }
+.check-inline input { width: 16px; height: 16px; accent-color: var(--primary); flex: none; }
+.field:disabled { background: var(--g-100); color: var(--g-400); }
+
 .form-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 
 /* ----------------------------------------------------------------- botones */

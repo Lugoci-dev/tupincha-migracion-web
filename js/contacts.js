@@ -189,14 +189,17 @@ function tarjeta(c) {
       ? '<span class="badge ok" title="Confirmó su correo: la cuenta ya está activa">Cuenta activada</span>' : "") +
     (c.source === "manual" ? '<span class="badge new">Nuevo</span>' : "") +
     (c.source === "agent" ? '<span class="badge new">Nuevo · agente</span>' : "") +
+    (c.email_placeholder
+      ? '<span class="badge warn" title="Se creó sin correo: entra con uno temporal hasta que ponga el suyo">Correo temporal</span>' : "") +
     (c.staging_warning
       ? '<span class="badge warn" title="' + esc(c.staging_warning) + '">Activada con avisos</span>' : "");
 
   return (
     '<article class="card ' + clave + (sel ? " seleccionada" : "") + '">' +
       '<div class="card-top">' +
-        '<input class="card-pick" type="checkbox" data-accion="elegir" data-id="' + id + '"' +
-          (sel ? " checked" : "") + ' aria-label="Seleccionar a ' + esc(c.brand) + ' para envío por correo" />' +
+        (c.email_placeholder ? '<span class="card-pick"></span>' :
+          '<input class="card-pick" type="checkbox" data-accion="elegir" data-id="' + id + '"' +
+          (sel ? " checked" : "") + ' aria-label="Seleccionar a ' + esc(c.brand) + ' para envío por correo" />') +
         '<div class="card-title"><h3>' + esc(c.brand) + "</h3>" +
           (meta.length ? '<p class="meta">' + meta.join(" · ") + "</p>" : "") + "</div>" +
       "</div>" +
@@ -211,7 +214,8 @@ function tarjeta(c) {
       '<div class="actions">' +
         (c.wa_digits
           ? '<button class="btn btn-wa" data-accion="whatsapp" data-id="' + id + '">WhatsApp</button>' : "") +
-        '<button class="btn btn-outline" data-accion="enviar" data-id="' + id + '">Enviar correo</button>' +
+        (c.email_placeholder ? "" :
+          '<button class="btn btn-outline" data-accion="enviar" data-id="' + id + '">Enviar correo</button>') +
         '<button class="btn btn-ghost" data-accion="ver" data-id="' + id + '">Ver aviso</button>' +
         (c.can_delete
           ? '<button class="btn btn-ghost danger" data-accion="eliminar" data-id="' + id + '">Eliminar</button>' : "") +
@@ -357,9 +361,11 @@ async function verAviso(id) {
         "<br/><b>Estado:</b> " + esc(s.etiqueta) + (s.detalle ? " — " + esc(s.detalle) : "") + ".</p>",
       pie:
         (m.wa_digits ? '<button class="btn btn-wa" data-accion="whatsapp" data-id="' + id + '">Abrir WhatsApp</button>' : "") +
-        '<button class="btn btn-outline" data-accion="mailto" data-id="' + id + '">Abrir en mi correo</button>' +
+        (c.email_placeholder ? "" :
+          '<button class="btn btn-outline" data-accion="mailto" data-id="' + id + '">Abrir en mi correo</button>') +
         '<button class="btn btn-ghost" data-accion="copiar" data-id="' + id + '">Copiar texto</button>' +
-        '<button class="btn btn-primary" data-accion="enviar" data-id="' + id + '">Enviar por correo</button>',
+        (c.email_placeholder ? "" :
+          '<button class="btn btn-primary" data-accion="enviar" data-id="' + id + '">Enviar por correo</button>'),
     });
   } catch (err) {
     actualizarDialogo({ cuerpo: '<div class="alert">No se pudo cargar: ' + esc(motivo(err)) + "</div>" });
@@ -370,6 +376,7 @@ async function verAviso(id) {
 
 const MOTIVOS = {
   EMAIL_INVALIDO: "correo no válido",
+  CORREO_TEMPORAL: "correo temporal: avísale por WhatsApp",
   SIN_ASUNTO: "sin asunto",
   SIN_CUERPO: "sin cuerpo",
   DESACTIVADO: "desactivado",

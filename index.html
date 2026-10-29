@@ -105,6 +105,11 @@
           Se crea su cuenta sin confirmar y su perfil queda pendiente. Cuando el proveedor entre en la app y
           confirme su correo, el perfil y los servicios se publican solos. La contraseña se genera aquí y va en su aviso.
         </p>
+        <p class="alert info" id="placeholderInfo" hidden>
+          Se le crea un correo temporal con su teléfono y la cuenta queda activa al momento: su perfil se crea ya, sin
+          que tenga que confirmar nada. Los datos de acceso le llegan por WhatsApp, y la app le pedirá que ponga su
+          correo de verdad. El teléfono es obligatorio.
+        </p>
         <p class="alert info" id="formOrigin" hidden>
           Esto es lo que el agente entendió de tu texto. Añade lo que falta y créalo.
         </p>
@@ -115,9 +120,15 @@
             <label class="f wide"><span>Nombre comercial o marca</span>
               <input class="field" id="f_brand" maxlength="120" required autocomplete="off" />
             </label>
-            <label class="f"><span>Correo</span>
-              <input class="field" id="f_email" type="email" required autocomplete="off" spellcheck="false" />
-            </label>
+            <div class="f">
+              <label class="f"><span>Correo</span>
+                <input class="field" id="f_email" type="email" required autocomplete="off" spellcheck="false" />
+              </label>
+              <label class="check-inline">
+                <input type="checkbox" id="f_email_placeholder" />
+                <span>No tiene correo: crear con uno temporal</span>
+              </label>
+            </div>
             <label class="f"><span>Teléfono <i>(8 dígitos, o con +código)</i></span>
               <input class="field" id="f_phone" type="tel" inputmode="tel" autocomplete="off" />
             </label>
